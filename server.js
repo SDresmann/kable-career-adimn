@@ -39,6 +39,13 @@ app.use(function (req, res, next) {
     next();
 });
 
+// Health check – so you can confirm backend and DB on Render
+app.get('/health', (req, res) => {
+    const dbState = mongoose.connection.readyState;
+    const dbStatus = dbState === 1 ? 'connected' : dbState === 2 ? 'connecting' : 'disconnected';
+    res.json({ ok: true, db: dbStatus });
+});
+
 const userRouter = require('./Routes/user');
 app.use('/user', authLimiter, userRouter);
 
@@ -47,6 +54,12 @@ app.use('/api/checklist-submit', checklistSubmitRouter);
 
 const assignmentCommentRouter = require('./Routes/assignmentComment');
 app.use('/api/assignment-comment', assignmentCommentRouter);
+
+// Catch unhandled errors so the server doesn't crash and we return 500 with a message
+app.use((err, req, res, next) => {
+    console.error('Unhandled error', err);
+    res.status(500).json({ message: 'Something went wrong. Please try again.' });
+});
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);

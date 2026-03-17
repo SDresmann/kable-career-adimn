@@ -1,8 +1,13 @@
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const multer = require('multer');
 const ChecklistSubmission = require('../schema/ChecklistSubmissionSchema');
 
 const DEFAULT_RECIPIENT_EMAIL = process.env.DEFAULT_RECIPIENT_EMAIL;
+
+function dbReady() {
+  return mongoose.connection.readyState === 1;
+}
 
 // Use memory storage so we can save buffer to MongoDB and attach to email
 const upload = multer({
@@ -12,6 +17,9 @@ const upload = multer({
 
 // POST /api/checklist-submit - multipart: file (required), userEmail (optional), assignmentName (optional)
 router.post('/', upload.single('file'), async (req, res) => {
+  if (!dbReady()) {
+    return res.status(503).json({ message: 'Service temporarily unavailable. Please try again in a moment.' });
+  }
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded. Please select a file (e.g. your resume or checklist).' });

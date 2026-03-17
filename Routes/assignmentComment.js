@@ -1,8 +1,16 @@
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const AssignmentComment = require('../schema/AssignmentCommentSchema');
+
+function dbReady() {
+  return mongoose.connection.readyState === 1;
+}
 
 // POST /api/assignment-comment - body: { userEmail?, assignmentName, sectionId, assignmentIndex, comment, checklistChecked? }
 router.post('/', async (req, res) => {
+  if (!dbReady()) {
+    return res.status(503).json({ message: 'Service temporarily unavailable. Please try again in a moment.' });
+  }
   try {
     const { userEmail, assignmentName, sectionId, assignmentIndex, comment, checklistChecked } = req.body;
 

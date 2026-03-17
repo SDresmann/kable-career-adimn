@@ -1,11 +1,19 @@
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const User = require('../schema/LoginScema');
 const bcrypt = require('bcrypt');
 const { validateRegister, validateLogin } = require('../middleware/validateAuth');
 const { signToken } = require('../middleware/authJwt');
 
+function dbReady() {
+    return mongoose.connection.readyState === 1;
+}
+
 // Register
 router.post('/register', async (req, res) => {
+    if (!dbReady()) {
+        return res.status(503).json({ message: 'Service temporarily unavailable. Please try again in a moment.' });
+    }
     try {
         const { valid, email, password, message } = validateRegister(req.body);
         if (!valid) {
@@ -28,6 +36,9 @@ router.post('/register', async (req, res) => {
 
 // Login
 router.post('/login', async (req, res) => {
+    if (!dbReady()) {
+        return res.status(503).json({ message: 'Service temporarily unavailable. Please try again in a moment.' });
+    }
     try {
         const { valid, email, password, message } = validateLogin(req.body);
         if (!valid) {
