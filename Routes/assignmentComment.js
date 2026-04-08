@@ -1,16 +1,13 @@
 const router = require('express').Router();
-const mongoose = require('mongoose');
 const AssignmentComment = require('../schema/AssignmentCommentSchema');
+const requireDb = require('../middleware/requireDb');
 
-function dbReady() {
-  return mongoose.connection.readyState === 1;
-}
+const MAX_COMMENT_LENGTH = 100_000;
+
+router.use(requireDb);
 
 // POST /api/assignment-comment - body: { userEmail?, assignmentName, sectionId, assignmentIndex, comment, checklistChecked? }
 router.post('/', async (req, res) => {
-  if (!dbReady()) {
-    return res.status(503).json({ message: 'Service temporarily unavailable. Please try again in a moment.' });
-  }
   try {
     const { userEmail, assignmentName, sectionId, assignmentIndex, comment, checklistChecked } = req.body;
 
@@ -18,15 +15,24 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Comment is required.' });
     }
 
+    const commentText = String(comment).trim();
+    if (commentText.length > MAX_COMMENT_LENGTH) {
+      return res.status(400).json({ message: `Comment is too long (max ${MAX_COMMENT_LENGTH} characters).` });
+    }
+
     const sectionIdNum = sectionId != null ? parseInt(sectionId, 10) : 0;
     const assignmentIndexNum = assignmentIndex != null ? parseInt(assignmentIndex, 10) : 0;
 
+    const emailNorm =
+      userEmail && String(userEmail).trim()
+        ? String(userEmail).trim().toLowerCase()
+        : 'unknown';
     const doc = {
-      userEmail: userEmail || 'unknown',
+      userEmail: emailNorm,
       assignmentName: assignmentName || 'Assignment',
       sectionId: sectionIdNum,
       assignmentIndex: assignmentIndexNum,
-      comment: String(comment).trim(),
+      comment: commentText,
     };
     if (Array.isArray(checklistChecked)) {
       doc.checklistChecked = checklistChecked.map((v) => Boolean(v));

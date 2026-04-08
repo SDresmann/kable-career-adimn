@@ -46,4 +46,37 @@ function validateLogin(body) {
     };
 }
 
-module.exports = { validateRegister, validateLogin };
+function validateChangePassword(body) {
+    const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+
+    if (!currentPassword) {
+        return { valid: false, currentPassword: '', newPassword: '', message: 'Current password is required' };
+    }
+    if (!newPassword) {
+        return { valid: false, currentPassword, newPassword: '', message: 'New password is required' };
+    }
+    if (newPassword.length < MIN_PASSWORD) {
+        return {
+            valid: false,
+            currentPassword,
+            newPassword: '',
+            message: `New password must be at least ${MIN_PASSWORD} characters`,
+        };
+    }
+    if (newPassword.length > MAX_PASSWORD) {
+        return { valid: false, currentPassword, newPassword: '', message: 'New password is too long' };
+    }
+    if (newPassword === currentPassword) {
+        return {
+            valid: false,
+            currentPassword,
+            newPassword: '',
+            message: 'New password must be different from your current password',
+        };
+    }
+
+    return { valid: true, currentPassword, newPassword, message: null };
+}
+
+module.exports = { validateRegister, validateLogin, validateChangePassword };

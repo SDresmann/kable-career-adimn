@@ -1,18 +1,28 @@
+const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const { resolveWeekMediaPath } = require('./utils/weekMedia');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
+// Render / reverse proxies: correct client IP for rate limiting
+app.set('trust proxy', 1);
 
-// Rate limit auth routes to reduce brute force and abuse
+app.use(compression());
+app.use(
+    helmet({
+        crossOriginResourcePolicy: { policy: 'cross-origin' },
+    })
+);
+app.use(cors());
+app.use(express.json({ limit: '512kb' }));
+
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
@@ -21,50 +31,76 @@ const authLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Use "test" database so assignments and users are in the same DB the admin reads from
+const submitLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 120,
+    message: { message: 'Too many submissions; try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 const uri = process.env.ATLAS_URI;
 const dbName = process.env.MONGO_DB_NAME || 'test';
 
-app.use(function (req, res, next) {
-    res.header('Access-Control-Allow-Origin', '*');
-    next();
-});
-
-// Root – so backend URL doesn’t 404
 app.get('/', (req, res) => {
     res.json({ message: 'Kable Career API', login: '/user/login', health: '/health' });
 });
 
-// Health check – so you can confirm backend and DB on Render
 app.get('/health', (req, res) => {
     const dbState = mongoose.connection.readyState;
     const dbStatus = dbState === 1 ? 'connected' : dbState === 2 ? 'connecting' : 'disconnected';
     res.json({ ok: true, db: dbStatus });
 });
 
+function sendWeekMedia(req, res, subdir) {
+    const id = parseInt(req.params.id, 10);
+    const filename = (req.params.filename || '').replace(/\.\./g, '');
+    if (!id || id < 1 || id > 12 || !filename) {
+        return res.status(400).send('Invalid request');
+    }
+    const filePath = resolveWeekMediaPath(id, subdir, filename);
+    if (!filePath) {
+        return res.status(404).send('Not found');
+    }
+    res.sendFile(filePath);
+}
+
+app.get('/api/media/week/:id/video/:filename', (req, res) => {
+    sendWeekMedia(req, res, 'video');
+});
+
+app.get('/api/media/week/:id/audio/:filename', (req, res) => {
+    sendWeekMedia(req, res, 'audio');
+});
+
 const userRouter = require('./Routes/user');
 app.use('/user', authLimiter, userRouter);
 
 const checklistSubmitRouter = require('./Routes/checklistSubmit');
-app.use('/api/checklist-submit', checklistSubmitRouter);
+app.use('/api/checklist-submit', submitLimiter, checklistSubmitRouter);
 
 const assignmentCommentRouter = require('./Routes/assignmentComment');
-app.use('/api/assignment-comment', assignmentCommentRouter);
+app.use('/api/assignment-comment', submitLimiter, assignmentCommentRouter);
 
-// Catch unhandled errors so the server doesn't crash and we return 500 with a message
 app.use((err, req, res, next) => {
     console.error('Unhandled error', err);
     res.status(500).json({ message: 'Something went wrong. Please try again.' });
 });
 
-// Start listening immediately so Render sees the service up; DB connects in background
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
 
 if (uri) {
-    const connectTimeout = 20000; // 20s for cold start
-    mongoose.connect(uri, { dbName, serverSelectionTimeoutMS: connectTimeout })
+    const connectTimeout = 20000;
+    mongoose
+        .connect(uri, {
+            dbName,
+            serverSelectionTimeoutMS: connectTimeout,
+            maxPoolSize: 10,
+            minPoolSize: 1,
+            socketTimeoutMS: 45000,
+        })
         .then(() => console.log(`MongoDB connected to database "${dbName}"`))
         .catch((err) => console.error('MongoDB connection error:', err.message));
 } else {
